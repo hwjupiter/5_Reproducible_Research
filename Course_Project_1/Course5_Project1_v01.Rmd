@@ -1,0 +1,123 @@
+---
+title: "Reproducible Research - Course Project 01 Report"
+output: html_document
+keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Reading in the Data
+
+Before any detailed analysis can be done, the data to be analysed must be read into the R environment. R can check whether or not the data exists and downloaded it if necessary. The .csv file should then be read into R and a summary of the data gives an idea of what it contains.
+
+```{r load_data}
+# Load the URL and filenames for the dataset
+data_URL <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+data_file <- "repdata_data_activity.zip"
+data_path <- "repdata_data_activity"
+
+# check if the file exists. If not, download and unzip it
+if (!file.exists(data_file)) {
+    download.file(data_URL, data_file)
+    unzip(data_file)
+}
+
+# Read the data into R
+raw_activity_data <- read.csv(file.path(data_path, "activity.csv"))
+
+# Print a summary and the first few lines of the new dataset to see what it looks like
+summary(raw_activity_data)
+head(raw_activity_data)
+
+```
+According to the initial summary, there are a total of 2304 NA values in the dataset. These will be omitted and thus excluded from the initial analysis.
+```{r process}
+# Remove the NAs from the data set
+activity_data <- na.omit(raw_activity_data)
+# Convert the date variables into the correct Date format
+activity_data$date <- as.Date(activity_data$date)
+```
+
+## Total Steps Taken per Day
+
+The number of steps taken each day can be calculated using the aggregate function. The mean and the median values of the number of steps taken per day can be found by using either the specified Mean and median functions, or using the summary function.
+```{r daily_steps}
+daily_steps <- aggregate(steps ~ date, data = activity_data, sum)
+# Plot a basic histogram showing the frequency of the various step counts
+hist(daily_steps$steps, col = "blue", main = "Histogram of Total Daily Steps", xlab = "Total Daily Steps", xlim = c(0, 25000), ylim = c(0, 30))
+# calculate the mean and median values of the daily step counts
+daily_mean <- mean(daily_steps$steps)
+daily_mean     # display the calculated mean
+daily_median <- median(daily_steps$steps)
+daily_median   # display the calculated median
+```
+
+## Average Daily Activity Pattern
+
+In order to look at the activity pattern across the day, the aggregate function is used once again to calculate the steps taken in each interval across all dates. the max.which function will identify which interval has the maximum number of steps and is therefore the most active.
+```{r interval_steps}
+interval_steps <- aggregate(steps ~ interval, data = activity_data, mean)
+plot(interval_steps, type = "l", col = "blue")
+# Identify the most active interval with the max.which function
+active_interval <- interval_steps$interval[which.max(interval_steps$steps)]
+active_interval    # display the number of the most active interval
+```
+
+## Imputing Missing Values
+
+As shown in the initial data reading section above, the summary command shows that there are 2304 NA values present in the raw dataset. This can be checked as follows:
+```{r}
+missing_values <- sum(is.na(raw_activity_data$steps))
+missing_values
+```
+
+These NA values will be replaced with the mean value for that specif interval that was calculated  in the previous section.
+```{r na_replace}
+# first, create a new dataset from the original raw data, which still has the NA values
+new_activity_data <- raw_activity_data
+for (count in 1:nrow(new_activity_data)) {
+  if (is.na(new_activity_data$steps[count])){
+    # find the matching interval from the daily average step data
+    ave_count <- which(new_activity_data$interval[count] == interval_steps$interval)
+    # assign the steps value at that interval to the new dataset to replace the NA
+    new_activity_data$steps[count] <- interval_steps[ave_count,]$steps
+  }
+  
+}
+new_activity_data$date <- as.Date(new_activity_data$date)
+# now calculate the new total steps per day using the dataset with replacement values, and plot the corresponding histogram
+new_daily_steps <- aggregate(steps ~ date, data = new_activity_data, sum)
+hist(new_daily_steps$steps, col = "blue", main = "Histogram of Total Daily Steps", xlab = "Total Daily Steps", xlim = c(0, 25000), ylim = c(0, 30))
+head(new_activity_data)
+
+# calculate the new mean and median values of the daily step counts
+new_mean <- mean(new_daily_steps$steps)
+new_mean     # display the calculated mean
+new_median <- median(new_daily_steps$steps)
+new_median   # display the calculated median
+```
+As can be seen, the mean value remains unchanged from the original, while the median now equals the mean. This shows that using daily average values to replace the NA values has no measurable effect on the overall mean and median values. Other methods could be investigated to see if they would have alternative effects.
+
+## Weekday Activity versus Weekend Activity
+
+In order to split the activity according to the day of the week, a new column must be created which identifies which day each date is.
+```{r}
+new_activity_data$day <- weekdays(new_activity_data$date)
+# Initially make all days weekdays, then separate out the weekends
+new_activity_data$day_type <- "weekday"
+new_activity_data$day_type[new_activity_data$day %in% c("Saturday", "Sunday")] <- "weekend"
+
+# Now calculate the average steps taken daily for weekdays and weekends
+day_interval_steps <- aggregate(steps ~ interval + day_type, data = new_activity_data, mean)
+# create a plot of the resulting data
+library(ggplot2)
+qplot(interval, steps, data=day_interval_steps,
+      geom="line",
+      xlab="Interval",
+      ylab="Number of Steps (Average)",
+      main="Average steps taken Weekends vs. Weekdays",
+      facets =day_type ~ .)
+```
+As can be seen, there is a slight variation in the activity of weekends. The activity picks up later, but there also seems to be more consistent activity during the course of the day. A more detailed analysis would confirm or deny this.
